@@ -8,10 +8,17 @@
 #include <cmath>
 #include <cstring>
 
+#pragma comment(lib, "urlmon.lib")
+
 #include "BiRefNet.h"
 
 #define STB_IMAGE_RESIZE_IMPLEMENTATION
 #include <stb_image_resize2.h>
+
+// モデルファイルの定数
+#define MODEL_URL L"https://huggingface.co/onnx-community/BiRefNet-ONNX/resolve/main/onnx/"
+#define MODEL_FILENAME L"model.onnx"
+#define MODEL_DOWNLOAD_URL (MODEL_URL MODEL_FILENAME L"?download=true")
 
 
 static std::filesystem::path get_execution_path() {
@@ -21,7 +28,7 @@ static std::filesystem::path get_execution_path() {
 	return std::filesystem::path(exePathStr).parent_path();
 }
 
-BiRefNet::BiRefNet(){}
+BiRefNet::BiRefNet() {}
 
 BiRefNet::~BiRefNet() {
 	Shutdown();
@@ -32,13 +39,22 @@ void BiRefNet::Shutdown() {
 	m_ortEnv.release();
 }
 
-bool BiRefNet::Initialize() {
+bool BiRefNet::Initialize(std::function<void(const std::wstring& status)> callback) {
 	if (m_initialized) return true;
+
+	m_callback = callback;
+
 	try {
 		// モデルファイルのパス
-		std::wstring modelFilePath = (get_execution_path() / L"model.onnx").wstring();
+		std::wstring modelFilePath = (get_execution_path() / MODEL_FILENAME).wstring();
+
+		// 無い場合はダウンロード
+		if (!std::filesystem::exists(modelFilePath)) {
+			if (!DownloadFile(MODEL_DOWNLOAD_URL, modelFilePath)) return false;
+		}
 
 		// ONNXランタイムの初期化
+		if(m_callback) m_callback(L"Initializing...");
 		m_ortEnv = Ort::Env();
 
 		// GPUセッションの作成
@@ -49,7 +65,7 @@ bool BiRefNet::Initialize() {
 			Ort::CUDAProviderOptions cudaOptions;
 			cudaOptions.Update({
 				{"arena_extend_strategy", "kSameAsRequested"},
-			});
+				});
 			sessionOptions.AppendExecutionProvider_CUDA_V2(*cudaOptions);
 			m_ortSession = Ort::Session(m_ortEnv, modelFilePath.c_str(), sessionOptions);
 			m_isEnableGPU = true;
@@ -139,7 +155,7 @@ Image BiRefNet::ProcessTiling(const Image& image) {
 
 bool BiRefNet::RunInference(const std::vector<float>& modelInputData,
 	const std::vector<int64_t>& inputShapes,
-	std::vector<float>& modelOutputData){
+	std::vector<float>& modelOutputData) {
 	// 出力形状を取得
 	auto outputTypeInfo = m_ortSession.GetOutputTypeInfo(0);
 	auto outputTensorInfo = outputTypeInfo.GetTensorTypeAndShapeInfo();
@@ -183,7 +199,7 @@ bool BiRefNet::RunInference(const std::vector<float>& modelInputData,
 	return true;
 }
 
-std::vector<float> BiRefNet::PreProcess(const Image& image, int originalWidth, int originalHeight){
+std::vector<float> BiRefNet::PreProcess(const Image& image, int originalWidth, int originalHeight) {
 	// リサイズ計算（アスペクト比を保持）
 	if (originalWidth > originalHeight) {
 		m_resizedWidth = m_inputWidth;
@@ -218,7 +234,7 @@ std::vector<float> BiRefNet::PreProcess(const Image& image, int originalWidth, i
 	return inputTensor;
 }
 
-Image BiRefNet::PostProcess(const std::vector<float>& modelOutputData, int originalWidth, int originalHeight){
+Image BiRefNet::PostProcess(const std::vector<float>& modelOutputData, int originalWidth, int originalHeight) {
 	// 出力形状を取得
 	auto outputTypeInfo = m_ortSession.GetOutputTypeInfo(0);
 	auto outputTensorInfo = outputTypeInfo.GetTensorTypeAndShapeInfo();
@@ -280,4 +296,111 @@ Image BiRefNet::PostProcess(const std::vector<float>& modelOutputData, int origi
 		}
 	}
 	return mask;
+}
+
+
+
+// ダウンロード進捗コールバッククラス
+class DownloadCallback : public IBindStatusCallback {
+public:
+	DownloadCallback(std::function<void(const std::wstring& status)> callback, int progressStart = 0, int progressEnd = 100)
+		: m_refCount(1), m_callback(callback), m_totalSize(0), m_isComplete(false), m_lastResult(S_OK),
+		m_progressStart(progressStart), m_progressEnd(progressEnd) {}
+
+	~DownloadCallback() = default;
+
+	// ダウンロード完了状態の確認
+	bool IsDownloadComplete() const { return m_isComplete; }
+	HRESULT GetLastResult() const { return m_lastResult; }
+
+	// IUnknown
+	STDMETHODIMP QueryInterface(REFIID riid, void** ppv) {
+		if (riid == IID_IUnknown || riid == IID_IBindStatusCallback) {
+			*ppv = this;
+			AddRef();
+			return S_OK;
+		}
+		*ppv = NULL;
+		return E_NOINTERFACE;
+	}
+
+	STDMETHODIMP_(ULONG) AddRef() {
+		return InterlockedIncrement(&m_refCount);
+	}
+
+	STDMETHODIMP_(ULONG) Release() {
+		LONG result = InterlockedDecrement(&m_refCount);
+		if (result == 0) {
+			delete this;
+		}
+		return result;
+	}
+
+	// IBindStatusCallback
+	STDMETHODIMP OnStartBinding(DWORD dwReserved, IBinding* pib) { return S_OK; }
+	STDMETHODIMP GetPriority(LONG* pnPriority) { *pnPriority = THREAD_PRIORITY_NORMAL; return S_OK; }
+	STDMETHODIMP OnLowResource(DWORD reserved) { return S_OK; }
+
+	STDMETHODIMP OnProgress(ULONG ulProgress, ULONG ulProgressMax, ULONG ulStatusCode, LPCWSTR szStatusText) {
+		if (m_callback && ulProgressMax > 0) {
+			// オーバーフローを避けるため、浮動小数点で計算
+			double progressRatio = static_cast<double>(ulProgress) / static_cast<double>(ulProgressMax);
+			int fileProgress = static_cast<int>(progressRatio * 100.0);
+
+			// 進捗範囲を考慮して計算
+			int totalProgress = m_progressStart + static_cast<int>((fileProgress * (m_progressEnd - m_progressStart)) / 100.0);
+			std::wstring status = L"ダウンロード中... " + std::to_wstring(totalProgress) + L"% (" +
+				std::to_wstring(ulProgress) + L"/" + std::to_wstring(ulProgressMax) + L")";
+			m_callback(status);
+		}
+		return S_OK;
+	}
+
+	STDMETHODIMP OnStopBinding(HRESULT hresult, LPCWSTR szError) {
+		m_lastResult = hresult;
+		m_isComplete = true;
+		return S_OK;
+	}
+
+	STDMETHODIMP GetBindInfo(DWORD* grfBINDF, BINDINFO* pbindinfo) {
+		*grfBINDF = BINDF_ASYNCHRONOUS | BINDF_ASYNCSTORAGE;
+		return S_OK;
+	}
+	STDMETHODIMP OnDataAvailable(DWORD grfBSCF, DWORD dwSize, FORMATETC* pformatetc, STGMEDIUM* pstgmed) { return S_OK; }
+	STDMETHODIMP OnObjectAvailable(REFIID riid, IUnknown* punk) { return S_OK; }
+
+private:
+	LONG m_refCount;
+	std::function<void(const std::wstring& status)> m_callback;
+	ULONG m_totalSize;
+	bool m_isComplete;
+	HRESULT m_lastResult;
+	int m_progressStart;
+	int m_progressEnd;
+};
+
+bool BiRefNet::DownloadFile(const std::wstring& url, const std::wstring& filePath) {
+	// 非同期ダウンロード用のコールバック
+	DownloadCallback* callback = new DownloadCallback(m_callback);
+
+	// 非同期ダウンロードを開始
+	HRESULT hr = URLDownloadToFile(NULL, url.c_str(), filePath.c_str(), 0, callback);
+
+	if (SUCCEEDED(hr)) {
+		// ダウンロード完了まで待機（メッセージループを処理）
+		while (!callback->IsDownloadComplete()) {
+			// メッセージループを処理してプログレスバーの更新を許可
+			MSG msg;
+			if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
+				TranslateMessage(&msg);
+				DispatchMessage(&msg);
+			}
+			Sleep(10); // 少し待機
+		}
+
+		hr = callback->GetLastResult();
+	}
+
+	callback->Release();
+	return SUCCEEDED(hr);
 }

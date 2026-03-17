@@ -123,7 +123,7 @@ int RemoveBG::Run() {
 	PostMessage(m_hwnd, WM_UPDATED, 0, 0);
 	Status(L"Initializing...");
 	std::thread t([this]() {
-		if (!m_BiRefNet.Initialize()) {
+		if (!m_BiRefNet.Initialize([this](const std::wstring& status){Status(status);})) {
 			// 初期化失敗時は処理をロックしたまま
 			Status(L"BiRefNet Initialize failed...");
 			return;
