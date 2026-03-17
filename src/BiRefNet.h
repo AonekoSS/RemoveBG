@@ -15,7 +15,7 @@ public:
     BiRefNet();
     ~BiRefNet();
 
-	bool Initialize();
+	bool Initialize(std::function<void(const std::wstring& status)> callback);
 	void Shutdown();
 
 	bool IsEnableGPU()const{ return m_isEnableGPU; }
@@ -30,6 +30,9 @@ private:
     // 初期化済みフラグ
     bool m_initialized{false};
 	bool m_isEnableGPU{false};
+
+	// コールバック
+	std::function<void(const std::wstring& status)> m_callback;
 
     // モデル入力サイズ
     int m_inputWidth{1024};
@@ -57,5 +60,8 @@ private:
     // 処理モード別
     Image ProcessStretch(const Image& image);
     Image ProcessTiling(const Image& image);
+
+	// ダウンロード
+	bool DownloadFile(const std::wstring& url, const std::wstring& filePath);
 };
 

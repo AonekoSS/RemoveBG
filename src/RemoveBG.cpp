@@ -40,11 +40,10 @@ bool RemoveBG::Initialize(HINSTANCE hInstance) {
 		.style = CS_HREDRAW | CS_VREDRAW,
 		.lpfnWndProc = WindowProc,
 		.hInstance = hInstance,
-		.hIcon = LoadIcon(NULL, IDI_APPLICATION),
+		.hIcon = LoadIcon(hInstance, IDI_APPLICATION),
 		.hCursor = LoadCursor(nullptr, IDC_ARROW),
 		.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1),
 		.lpszClassName = L"RemoveBGClass",
-		.hIconSm = LoadIcon(NULL, IDI_APPLICATION)
 	};
 	if (!RegisterClassEx(&wcex)) {
 		return false;
@@ -123,7 +122,7 @@ int RemoveBG::Run() {
 	PostMessage(m_hwnd, WM_UPDATED, 0, 0);
 	Status(L"Initializing...");
 	std::thread t([this]() {
-		if (!m_BiRefNet.Initialize()) {
+		if (!m_BiRefNet.Initialize([this](const std::wstring& status){Status(status);})) {
 			// 初期化失敗時は処理をロックしたまま
 			Status(L"BiRefNet Initialize failed...");
 			return;
