@@ -40,11 +40,10 @@ bool RemoveBG::Initialize(HINSTANCE hInstance) {
 		.style = CS_HREDRAW | CS_VREDRAW,
 		.lpfnWndProc = WindowProc,
 		.hInstance = hInstance,
-		.hIcon = LoadIcon(NULL, IDI_APPLICATION),
+		.hIcon = LoadIcon(hInstance, IDI_APPLICATION),
 		.hCursor = LoadCursor(nullptr, IDC_ARROW),
 		.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1),
 		.lpszClassName = L"RemoveBGClass",
-		.hIconSm = LoadIcon(NULL, IDI_APPLICATION)
 	};
 	if (!RegisterClassEx(&wcex)) {
 		return false;

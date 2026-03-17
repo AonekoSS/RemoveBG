@@ -108,6 +108,9 @@
   <ItemGroup>
     <ClInclude Include="RemoveBG.h" />
   </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="RemoveBG.rc" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />
 </Project>
