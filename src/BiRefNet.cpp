@@ -61,10 +61,12 @@ bool BiRefNet::Initialize(std::function<void(const std::wstring& status)> callba
 		try {
 			Ort::SessionOptions sessionOptions;
 			sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
-			sessionOptions.AddConfigEntry("memory.enable_memory_arena_shrinkage", "1");
 			Ort::CUDAProviderOptions cudaOptions;
 			cudaOptions.Update({
 				{"arena_extend_strategy", "kSameAsRequested"},
+				{"cudnn_conv_algo_search", "DEFAULT"},
+				{"cudnn_conv_use_max_workspace", "0"},
+				{"do_copy_in_default_stream", "1"},
 				});
 			sessionOptions.AppendExecutionProvider_CUDA_V2(*cudaOptions);
 			m_ortSession = Ort::Session(m_ortEnv, modelFilePath.c_str(), sessionOptions);
@@ -189,8 +191,14 @@ bool BiRefNet::RunInference(const std::vector<float>& modelInputData,
 		const char* inputNames[] = { inputName.c_str() };
 		const char* outputNames[] = { outputName.c_str() };
 
+		// 推論後にアリーナを縮小してVRAMを解放
+		Ort::RunOptions runOptions;
+		if (m_isEnableGPU) {
+			runOptions.AddConfigEntry("memory.enable_memory_arena_shrinkage", "gpu:0");
+		}
+
 		// 推論実行（この処理が最も時間がかかる）
-		m_ortSession.Run(Ort::RunOptions{ nullptr }, inputNames, &inputTensor, 1, outputNames, &outputTensor, 1);
+		m_ortSession.Run(runOptions, inputNames, &inputTensor, 1, outputNames, &outputTensor, 1);
 	}
 	catch (const Ort::Exception& e) {
 		OutputDebugStringA(e.what());
