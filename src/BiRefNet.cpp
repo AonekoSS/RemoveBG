@@ -64,6 +64,9 @@ bool BiRefNet::Initialize(std::function<void(const std::wstring& status)> callba
 			Ort::CUDAProviderOptions cudaOptions;
 			cudaOptions.Update({
 				{"arena_extend_strategy", "kSameAsRequested"},
+				{"cudnn_conv_algo_search", "DEFAULT"},
+				{"cudnn_conv_use_max_workspace", "0"},
+				{"do_copy_in_default_stream", "1"},
 				});
 			sessionOptions.AppendExecutionProvider_CUDA_V2(*cudaOptions);
 			m_ortSession = Ort::Session(m_ortEnv, modelFilePath.c_str(), sessionOptions);
