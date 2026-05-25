@@ -1,4 +1,4 @@
-
+﻿
 #define NOMINMAX
 #include <windows.h>
 #include <commctrl.h>
@@ -127,7 +127,7 @@ int RemoveBG::Run() {
 			Status(L"BiRefNet Initialize failed...");
 			return;
 		}
-		std::wstring gpuStatus = m_BiRefNet.IsEnableGPU() ? L"GPU 有効" : L"CPU";
+		std::wstring gpuStatus = m_BiRefNet.IsEnableGPU() ? L"TensorRT RTX" : L"CPU";
 		Status(L"Initialized. (" + gpuStatus + L")");
 		m_bProcessing = false;
 		PostMessage(m_hwnd, WM_UPDATED, 0, 0);

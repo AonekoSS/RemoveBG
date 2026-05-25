@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <unordered_map>
 
 #pragma comment(lib, "urlmon.lib")
 
@@ -17,9 +18,20 @@
 
 // モデルファイルの定数
 #define MODEL_URL L"https://huggingface.co/onnx-community/BiRefNet-ONNX/resolve/main/onnx/"
-#define MODEL_FILENAME L"model.onnx"
+#define MODEL_FILENAME L"model_fp16.onnx"
 #define MODEL_DOWNLOAD_URL (MODEL_URL MODEL_FILENAME L"?download=true")
 
+static constexpr const char* kTrtRtxEpName = "NvTensorRTRTXExecutionProvider";
+static constexpr wchar_t kTrtRtxEpDllName[] = L"onnxruntime_providers_nv_tensorrt_rtx.dll";
+static constexpr wchar_t kTrtRtxCacheDirName[] = L"trt_rtx_cache";
+
+static std::string wide_to_utf8(std::wstring_view wstr) {
+	if (wstr.empty()) return {};
+	const int len = WideCharToMultiByte(CP_UTF8, 0, wstr.data(), static_cast<int>(wstr.size()), nullptr, 0, nullptr, nullptr);
+	std::string out(len, '\0');
+	WideCharToMultiByte(CP_UTF8, 0, wstr.data(), static_cast<int>(wstr.size()), out.data(), len, nullptr, nullptr);
+	return out;
+}
 
 static std::filesystem::path get_execution_path() {
 	wchar_t exePath[MAX_PATH];
@@ -57,23 +69,40 @@ bool BiRefNet::Initialize(std::function<void(const std::wstring& status)> callba
 		if(m_callback) m_callback(L"Initializing...");
 		m_ortEnv = Ort::Env();
 
-		// GPUセッションの作成
-		try {
-			Ort::SessionOptions sessionOptions;
-			sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
-			Ort::CUDAProviderOptions cudaOptions;
-			cudaOptions.Update({
-				{"arena_extend_strategy", "kSameAsRequested"},
-				{"cudnn_conv_algo_search", "DEFAULT"},
-				{"cudnn_conv_use_max_workspace", "0"},
-				{"do_copy_in_default_stream", "1"},
-				});
-			sessionOptions.AppendExecutionProvider_CUDA_V2(*cudaOptions);
-			m_ortSession = Ort::Session(m_ortEnv, modelFilePath.c_str(), sessionOptions);
-			m_isEnableGPU = true;
-		}
-		catch (const std::exception& e) {
-			OutputDebugStringA(e.what());
+		// TensorRT RTX EP セッションの作成
+		const auto epDllPath = get_execution_path() / kTrtRtxEpDllName;
+		if (std::filesystem::exists(epDllPath)) {
+			try {
+				if (m_callback) m_callback(L"TensorRT RTX 初期化中...");
+				m_ortEnv.RegisterExecutionProviderLibrary(kTrtRtxEpName, epDllPath.wstring());
+
+				std::vector<Ort::ConstEpDevice> trtDevices;
+				for (const auto& device : m_ortEnv.GetEpDevices()) {
+					if (device.EpName() && std::strcmp(device.EpName(), kTrtRtxEpName) == 0) {
+						trtDevices.push_back(device);
+						break;
+					}
+				}
+
+				if (!trtDevices.empty()) {
+					Ort::SessionOptions sessionOptions;
+					sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
+
+					const auto cachePath = get_execution_path() / kTrtRtxCacheDirName;
+					std::filesystem::create_directories(cachePath);
+					const std::unordered_map<std::string, std::string> epOptions{
+						{"nv_runtime_cache_path", wide_to_utf8(cachePath.wstring())},
+					};
+
+					sessionOptions.AppendExecutionProvider_V2(m_ortEnv, trtDevices, epOptions);
+					m_ortSession = Ort::Session(m_ortEnv, modelFilePath.c_str(), sessionOptions);
+					m_isEnableGPU = true;
+				}
+			}
+			catch (const std::exception& e) {
+				OutputDebugStringA(e.what());
+				m_ortSession.release();
+			}
 		}
 
 		// CPUセッションの作成

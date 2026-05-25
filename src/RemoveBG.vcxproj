@@ -78,8 +78,11 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <AdditionalLibraryDirectories>..\external\onnxruntime\lib\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>onnxruntime.lib;onnxruntime_providers_cuda.lib;onnxruntime_providers_shared.lib;onnxruntime_providers_tensorrt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>onnxruntime.lib;onnxruntime_providers_shared.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <PostBuildEvent>
+      <Command>xcopy /y /d "$(ProjectDir)..\external\onnxruntime\lib\onnxruntime.dll" "$(OutDir)"&#x0D;&#x0A;xcopy /y /d "$(ProjectDir)..\external\onnxruntime\lib\onnxruntime_providers_shared.dll" "$(OutDir)"&#x0D;&#x0A;if exist "$(ProjectDir)..\external\trt-rtx-ep\onnxruntime_providers_nv_tensorrt_rtx.dll" xcopy /y /d "$(ProjectDir)..\external\trt-rtx-ep\onnxruntime_providers_nv_tensorrt_rtx.dll" "$(OutDir)"&#x0D;&#x0A;if exist "$(ProjectDir)..\external\tensorrt-rtx\bin" xcopy /y /d "$(ProjectDir)..\external\tensorrt-rtx\bin\*.dll" "$(OutDir)"</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -97,8 +100,11 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <AdditionalLibraryDirectories>..\external\onnxruntime\lib\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>onnxruntime.lib;onnxruntime_providers_cuda.lib;onnxruntime_providers_shared.lib;onnxruntime_providers_tensorrt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>onnxruntime.lib;onnxruntime_providers_shared.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <PostBuildEvent>
+      <Command>xcopy /y /d "$(ProjectDir)..\external\onnxruntime\lib\onnxruntime.dll" "$(OutDir)"&#x0D;&#x0A;xcopy /y /d "$(ProjectDir)..\external\onnxruntime\lib\onnxruntime_providers_shared.dll" "$(OutDir)"&#x0D;&#x0A;if exist "$(ProjectDir)..\external\trt-rtx-ep\onnxruntime_providers_nv_tensorrt_rtx.dll" xcopy /y /d "$(ProjectDir)..\external\trt-rtx-ep\onnxruntime_providers_nv_tensorrt_rtx.dll" "$(OutDir)"&#x0D;&#x0A;if exist "$(ProjectDir)..\external\tensorrt-rtx\bin" xcopy /y /d "$(ProjectDir)..\external\tensorrt-rtx\bin\*.dll" "$(OutDir)"</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="BiRefNet.cpp" />
